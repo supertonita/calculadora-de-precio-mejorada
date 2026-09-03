@@ -6,7 +6,7 @@
     <title>Super Toñita - Sistema Empaque</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
-    <!-- Librería para convertir el HTML a imagen PNG -->
+    <!-- Librería para convertir la etiqueta HTML a Imagen PNG -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         @media print {
@@ -30,12 +30,12 @@
 
     <div class="max-w-md mx-auto space-y-4">
         
-        <!-- Indicador de Impresión -->
+        <!-- Estado / Modo de Impresión -->
         <div class="bg-white p-3 rounded-lg shadow flex justify-between items-center">
             <span class="text-sm font-bold text-green-700 flex items-center gap-1">
-                📱 Impresión RawBT / P25
+                📱 Impresión Térmica Activa
             </span>
-            <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-1 rounded">Modo Activo</span>
+            <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-1 rounded">ESC/POS - RawBT</span>
         </div>
 
         <!-- Pestañas -->
@@ -49,15 +49,10 @@
             <select id="productoSelect" class="w-full text-lg p-4 border rounded-xl font-bold bg-white shadow-sm"></select>
             <input type="number" id="pesoInput" step="0.01" inputmode="decimal" class="w-full text-5xl text-center py-6 border-4 border-blue-500 rounded-2xl shadow-inner font-mono" placeholder="0.00 lb">
             
-            <!-- Botón Principal: Envío directo a RawBT -->
-            <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR (RAWBT)</button>
+            <!-- Botón Principal: Imprimir mediante RawBT como Imagen -->
+            <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR</button>
             
-            <!-- Botón Secundario: Cuadro de Impresión de Android -->
-            <button onclick="imprimirSistema()" class="w-full bg-gray-600 text-white py-3 text-sm font-bold rounded-xl shadow active:scale-95 transition-all">
-                🖨️ Opción 2: Usar Impresión del Sistema Android
-            </button>
-
-            <!-- Vista previa que se convierte en imagen para la impresora P25 -->
+            <!-- Vista previa de la Etiqueta (Se procesa a PNG) -->
             <div id="etiquetaPreview" class="bg-white p-3 border-2 border-dashed border-gray-300 rounded-xl text-center space-y-1 mx-auto max-w-[280px]">
                 <p class="text-xs font-bold uppercase tracking-wider text-gray-600">Super Toñita</p>
                 <p id="etiqNombre" class="text-lg font-black uppercase text-gray-800 leading-tight">-- Seleccione --</p>
@@ -83,6 +78,7 @@
         </div>
     </div>
 
+    <!-- Módulo Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
@@ -131,6 +127,7 @@
         });
     </script>
 
+    <!-- Lógica de Interfaz e Impresión -->
     <script>
         function showTab(tab) {
             document.getElementById('empaqueTab').classList.toggle('hidden', tab !== 'empaque');
@@ -242,35 +239,28 @@
             try {
                 const elementoEtiqueta = document.getElementById("etiquetaPreview");
 
-                // Renderiza la vista previa a un Canvas
+                // Renderiza la vista previa a un Canvas con buena resolución
                 const canvas = await html2canvas(elementoEtiqueta, {
-                    scale: 3,
+                    scale: 2,
                     backgroundColor: "#ffffff",
                     logging: false
                 });
 
-                // Extrae la imagen Base64 limpia
+                // Obtiene la Data URL en formato PNG (incluye 'data:image/png;base64,...')
                 const dataUrl = canvas.toDataURL("image/png");
-                const cleanBase64 = dataUrl.replace(/^data:image\/png;base64,/, "");
 
-                // Intent de Android sin parámetros que provoquen apertura de Play Store
-                const rawbtUri = "intent:base64," + cleanBase64 + "#Intent;scheme=rawbt;end;";
-                
-                window.location.href = rawbtUri;
+                // Envía directamente mediante el protocolo 'rawbt:' para forzar el modo IMAGEN
+                window.location.href = "rawbt:" + dataUrl;
 
             } catch (error) {
                 console.error("Error al generar la imagen:", error);
-                window.print();
+                alert("Ocurrió un error al procesar la etiqueta: " + error.message);
             }
 
+            // Limpia el input para el siguiente pesaje
             document.getElementById('pesoInput').value = '';
             actualizarPreview();
             document.getElementById('pesoInput').focus();
-        }
-
-        function imprimirSistema() {
-            actualizarPreview();
-            window.print();
         }
     </script>
 </body>
