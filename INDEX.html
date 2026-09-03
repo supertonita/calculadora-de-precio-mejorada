@@ -12,16 +12,13 @@
             #etiquetaPreview, #etiquetaPreview * { visibility: visible; }
             #etiquetaPreview {
                 position: absolute; left: 0; top: 0;
-                width: 30mm; height: 40mm;
+                width: 40mm; height: 30mm;
                 margin: 0; padding: 1mm;
                 border: none !important;
                 background: white;
             }
-            #barcode { width: 38mm !important; height: 12mm !important; }
-            #etiqNombre { font-size: 10pt !important; }
-            #etiqInfo { font-size: 8pt !important; }
         }
-        @page { size: 30mm 40mm; margin: 0; }
+        @page { size: 40mm 30mm; margin: 0; }
     </style>
 </head>
 <body class="bg-gray-100 p-2">
@@ -258,100 +255,41 @@
 
             if (bluetoothCharacteristic) {
                 try {
-                    // Lienzo con dimensiones exactas proporcionales a 40x30mm (384 de ancho por 280 de alto)
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 384; 
-                    canvas.height = 280; 
-                    const ctx = canvas.getContext('2d');
-                    
-                    // Fondo blanco
-                    ctx.fillStyle = "#FFFFFF";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                    // Textos distribuidos proporcionalmente
-                    ctx.fillStyle = "#000000";
-                    ctx.font = "bold 20px Arial";
-                    ctx.textAlign = "center";
-                    ctx.fillText("SUPER TOÑITA", canvas.width / 2, 35);
-
-                    ctx.font = "bold 24px Arial";
-                    ctx.fillText(p.nombre.toUpperCase(), canvas.width / 2, 75);
-
-                    ctx.font = "bold 20px Arial";
-                    ctx.textAlign = "left";
-                    ctx.fillText(`PESO: ${peso.toFixed(2)} lb`, 25, 115);
-
                     const totalBruto = peso * p.precioLibra;
                     const totalAjustado = redondearA5Centavos(totalBruto);
-                    ctx.textAlign = "right";
-                    ctx.fillText(`TOTAL: $${totalAjustado.toFixed(2)}`, canvas.width - 25, 115);
+                    const pesoStr = Math.round(peso * 100).toString().padStart(4, '0');
+                    const codigoFinal = `${p.id}${pesoStr}`;
 
-                    // Código de barras
-                    const svgElement = document.getElementById('barcode');
-                    const svgString = new XMLSerializer().serializeToString(svgElement);
-                    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-                    const URL = window.URL || window.webkitURL || window;
-                    const blobURL = URL.createObjectURL(svgBlob);
-                    
-                    await new Promise((resolve) => {
-                        const img = new Image();
-                        img.onload = function () {
-                            ctx.drawImage(img, (canvas.width - 320) / 2, 135, 320, 110);
-                            URL.revokeObjectURL(blobURL);
-                            resolve();
-                        };
-                        img.src = blobURL;
-                    });
+                    // Comando TSPL nativo optimizado para impresoras térmicas de etiquetas 40x30mm
+                    let tspl = 
+                        "SIZE 40 mm, 30 mm\n" +
+                        "GAP 2 mm, 0 mm\n" +
+                        "DIRECTION 1\n" +
+                        "CLS\n" +
+                        // Título superior
+                        "TEXT 40, 15, \"2\", 0, 1, 1, \"SUPER TONITA\"\n" +
+                        // Nombre del producto centrado/destacado
+                        `TEXT 20, 45, \"3\", 0, 1, 1, \"${p.nombre.toUpperCase()}\"\n` +
+                        // Peso y Precio
+                        `TEXT 20, 95, \"2\", 0, 1, 1, \"PESO: ${peso.toFixed(2)} LB\"\n` +
+                        `TEXT 220, 95, \"2\", 0, 1, 1, \"TOTAL: \$${totalAjustado.toFixed(2)}\"\n` +
+                        // Código de barras limpio generado por hardware TSPL
+                        `BARCODE 40, 140, \"128\", 50, 1, 0, 2, 2, \"${codigoFinal}\"\n` +
+                        "PRINT 1, 1\n";
 
-                    // Extracción de píxeles en formato de bandas verticales (compatible con P2)
-                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const width = canvas.width;
-                    const height = canvas.height;
-                    
-                    let bytes = [];
-                    // Inicializar impresora
-                    bytes.push(0x1B, 0x40);
-                    // Alinear al centro
-                    bytes.push(0x1B, 0x61, 0x01);
+                    const encoder = new TextEncoder();
+                    const dataArray = encoder.encode(tspl);
 
-                    // Impresión en modo de bandas de 8 puntos verticales (ESC * m nL nH)
-                    const sliceHeight = 8;
-                    for (let y = 0; y < height; y += sliceHeight) {
-                        bytes.push(0x1B, 0x2A, 0x00, width & 0xFF, (width >> 8) & 0xFF);
-                        for (let x = 0; x < width; x++) {
-                            let sliceByte = 0;
-                            for (let bit = 0; bit < sliceHeight; bit++) {
-                                let curY = y + bit;
-                                if (curY < height) {
-                                    let idx = (curY * width + x) * 4;
-                                    let r = imgData.data[idx];
-                                    let g = imgData.data[idx + 1];
-                                    let b = imgData.data[idx + 2];
-                                    if ((r + g + b) / 3 < 130) {
-                                        sliceByte |= (1 << (7 - bit));
-                                    }
-                                }
-                            }
-                            bytes.push(sliceByte);
-                        }
-                        // Salto de línea por banda
-                        bytes.push(0x0A);
-                    }
-
-                    // Avance final para expulsar la etiqueta por completo
-                    bytes.push(0x1B, 0x64, 0x03);
-
-                    // Envío en paquetes seguros por Bluetooth
+                    // Envío por bloques Bluetooth
                     const CHUNK_SIZE = 512;
-                    const dataArray = new Uint8Array(bytes);
                     for (let i = 0; i < dataArray.length; i += CHUNK_SIZE) {
                         const chunk = dataArray.slice(i, i + CHUNK_SIZE);
                         await bluetoothCharacteristic.writeValue(chunk);
                     }
 
                 } catch (error) {
-                    console.error("Error al imprimir en P2:", error);
-                    alert("Error al enviar la etiqueta gráfica. Reconecta el Bluetooth.");
+                    console.error("Error al imprimir TSPL:", error);
+                    alert("Error al enviar comando TSPL. Reconecta el Bluetooth.");
                 }
             } else {
                 window.print();
