@@ -6,6 +6,7 @@
     <title>Super Toñita - Sistema Empaque</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+    <!-- Librería para convertir el HTML a imagen PNG -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         @media print {
@@ -29,23 +30,27 @@
 
     <div class="max-w-md mx-auto space-y-4">
         
+        <!-- Indicador de Impresión RawBT -->
         <div class="bg-white p-3 rounded-lg shadow flex justify-between items-center">
             <span class="text-sm font-bold text-green-700 flex items-center gap-1">
                 📱 Modo RawBT Android Activo
             </span>
-            <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-1 rounded">P25 Bluetooth</span>
+            <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-1 rounded">Impresora P25</span>
         </div>
 
+        <!-- Pestañas -->
         <div class="flex bg-white rounded-lg shadow p-1 no-print">
             <button onclick="showTab('empaque')" id="btnEmpaque" class="flex-1 py-2 font-bold bg-green-600 text-white rounded">Empaque</button>
             <button onclick="showTab('admin')" id="btnAdmin" class="flex-1 py-2 font-bold text-gray-600">Admin</button>
         </div>
 
+        <!-- Sección Empaque -->
         <div id="empaqueTab" class="space-y-4">
             <select id="productoSelect" class="w-full text-lg p-4 border rounded-xl font-bold bg-white shadow-sm"></select>
             <input type="number" id="pesoInput" step="0.01" inputmode="decimal" class="w-full text-5xl text-center py-6 border-4 border-blue-500 rounded-2xl shadow-inner font-mono" placeholder="0.00 lb">
             <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR</button>
             
+            <!-- Vista previa que se convierte en imagen para la impresora P25 -->
             <div id="etiquetaPreview" class="bg-white p-3 border-2 border-dashed border-gray-300 rounded-xl text-center space-y-1 mx-auto max-w-[280px]">
                 <p class="text-xs font-bold uppercase tracking-wider text-gray-600">Super Toñita</p>
                 <p id="etiqNombre" class="text-lg font-black uppercase text-gray-800 leading-tight">-- Seleccione --</p>
@@ -57,6 +62,7 @@
             </div>
         </div>
 
+        <!-- Sección Admin -->
         <div id="adminTab" class="hidden space-y-4">
             <div class="bg-white p-4 rounded-xl shadow space-y-2">
                 <input type="hidden" id="editId">
@@ -229,24 +235,25 @@
             try {
                 const elementoEtiqueta = document.getElementById("etiquetaPreview");
 
-                // Renderiza la vista previa a un Canvas con alta escala (para nitidez del barcode)
+                // Renderiza la vista previa a un Canvas con alta resolución (scale: 3)
                 const canvas = await html2canvas(elementoEtiqueta, {
                     scale: 3,
                     backgroundColor: "#ffffff",
                     logging: false
                 });
 
-                // Convertir a base64
+                // Extrae la imagen en Base64 sin el prefijo de cabecera
                 const dataUrl = canvas.toDataURL("image/png");
-                const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+                const cleanBase64 = dataUrl.replace(/^data:image\/png;base64,/, "");
 
-                // Enviar la imagen directamente al intent de RawBT en Android
-                const rawbtIntent = `intent:${base64Data}#Intent;scheme=rawbt;package=ru.a404m.rawbtprinter;type=image/png;end;`;
+                // Intent oficial de RawBT con el paquete corregido (ru.a402d.rawbtprinter)
+                const rawbtIntent = `intent:${cleanBase64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;type=image/png;end;`;
+                
+                // Ejecuta la apertura de RawBT en Android
                 window.location.href = rawbtIntent;
 
             } catch (error) {
-                console.error("Error al generar la imagen con html2canvas:", error);
-                // Si falla en un PC o navegador de escritorio, usa la ventana de impresión estándar
+                console.error("Error al generar la imagen:", error);
                 window.print();
             }
 
