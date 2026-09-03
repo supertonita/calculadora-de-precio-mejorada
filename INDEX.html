@@ -254,38 +254,104 @@
                 return;
             }
 
-            const totalBruto = peso * p.precioLibra;
-            const totalAjustado = redondearA5Centavos(totalBruto);
-            const pesoStr = Math.round(peso * 100).toString().padStart(4, '0');
-            const codigoFinal = `${p.id}${pesoStr}`;
-
             actualizarPreview();
 
             if (bluetoothCharacteristic) {
                 try {
-                    const encoder = new TextEncoder();
+                    // Creamos un canvas con el ancho exacto optimizado (384 puntos)
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 384; 
+                    canvas.height = 320; 
+                    const ctx = canvas.getContext('2d');
                     
-                    // Comandos TSPL nativos optimizados para la impresora P2 (40x30mm)
-                    let tsplComandos = 
-                        "SIZE 40 mm, 30 mm\r\n" +
-                        "GAP 2 mm, 0 mm\r\n" +
-                        "DIRECTION 1\r\n" +
-                        "CLS\r\n" +
-                        // Título centrado
-                        "TEXT 70,15,\"2\",0,1,1,\"SUPER TONITA\"\r\n" +
-                        // Nombre del producto
-                        "TEXT 30,45,\"3\",0,1,1,\"" + p.nombre.toUpperCase() + "\"\r\n" +
-                        // Peso y Total
-                        "TEXT 30,85,\"2\",0,1,1,\"PESO: " + peso.toFixed(2) + " lb\"\r\n" +
-                        "TEXT 170,85,\"2\",0,1,1,\"TOTAL: $" + totalAjustado.toFixed(2) + "\"\r\n" +
-                        // Código de barras nativo de hardware
-                        "BARCODE 30,115,\"128\",45,1,0,2,2,\"" + codigoFinal + "\"\r\n" +
-                        "PRINT 1,1\r\n";
+                    // Fondo completamente blanco
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                    await bluetoothCharacteristic.writeValue(encoder.encode(tsplComandos));
+                    // Estilos de texto nítidos
+                    ctx.fillStyle = "#000000";
+                    ctx.font = "bold 22px Arial";
+                    ctx.textAlign = "center";
+                    ctx.fillText("SUPER TOÑITA", canvas.width / 2, 40);
+
+                    ctx.font = "bold 28px Arial";
+                    ctx.fillText(p.nombre.toUpperCase(), canvas.width / 2, 80);
+
+                    ctx.font = "bold 22px Arial";
+                    ctx.textAlign = "left";
+                    ctx.fillText(`PESO: ${peso.toFixed(2)} lb`, 30, 125);
+
+                    const totalBruto = peso * p.precioLibra;
+                    const totalAjustado = redondearA5Centavos(totalBruto);
+                    ctx.textAlign = "right";
+                    ctx.fillText(`TOTAL: $${totalAjustado.toFixed(2)}`, canvas.width - 30, 125);
+
+                    // Insertar el código de barras SVG generado
+                    const svgElement = document.getElementById('barcode');
+                    const svgString = new XMLSerializer().serializeToString(svgElement);
+                    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                    const URL = window.URL || window.webkitURL || window;
+                    const blobURL = URL.createObjectURL(svgBlob);
+                    
+                    await new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = function () {
+                            ctx.drawImage(img, (canvas.width - 300) / 2, 145, 300, 110);
+                            URL.revokeObjectURL(blobURL);
+                            resolve();
+                        };
+                        img.src = blobURL;
+                    });
+
+                    // Traducir los pixeles del canvas a formato de matriz de puntos compatible por líneas
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const width = canvas.width;
+                    const height = canvas.height;
+                    const bytesWidth = width / 8; // 48 bytes
+                    
+                    let rasterBytes = [];
+                    // Inicializar impresora (ESC @)
+                    rasterBytes.push(0x1B, 0x40); 
+                    // Centrar (ESC a 1)
+                    rasterBytes.push(0x1B, 0x61, 0x01);
+
+                    // Comando raster GS v 0 para imprimir mapa de bits por bloques limpios
+                    rasterBytes.push(0x1D, 0x76, 0x30, 0x00);
+                    rasterBytes.push(bytesWidth & 0xFF, (bytesWidth >> 8) & 0xFF);
+                    rasterBytes.push(height & 0xFF, (height >> 8) & 0xFF);
+
+                    for (let y = 0; y < height; y++) {
+                        for (let xBytes = 0; xBytes < bytesWidth; xBytes++) {
+                            let byte = 0;
+                            for (let bit = 0; bit < 8; bit++) {
+                                const x = xBytes * 8 + bit;
+                                const idx = (y * width + x) * 4;
+                                const r = imgData.data[idx];
+                                const g = imgData.data[idx + 1];
+                                const b = imgData.data[idx + 2];
+                                // Si el pixel es oscuro, encendemos el bit
+                                if ((r + g + b) / 3 < 130) {
+                                    byte |= (1 << (7 - bit));
+                                }
+                            }
+                            rasterBytes.push(byte);
+                        }
+                    }
+
+                    // Comando para avanzar y expulsar la etiqueta correctamente
+                    rasterBytes.push(0x1B, 0x64, 0x04);
+
+                    // Enviar por bloques estables para que la P2 no sature su buffer Bluetooth
+                    const CHUNK_SIZE = 512;
+                    const dataArray = new Uint8Array(rasterBytes);
+                    for (let i = 0; i < dataArray.length; i += CHUNK_SIZE) {
+                        const chunk = dataArray.slice(i, i + CHUNK_SIZE);
+                        await bluetoothCharacteristic.writeValue(chunk);
+                    }
+
                 } catch (error) {
-                    console.error("Error al enviar por Bluetooth:", error);
-                    alert("Error al enviar a la impresora Bluetooth. Intenta reconectar.");
+                    console.error("Error al imprimir gráfico en P2:", error);
+                    alert("Error al enviar la etiqueta gráfica. Reconecta el Bluetooth.");
                 }
             } else {
                 window.print();
