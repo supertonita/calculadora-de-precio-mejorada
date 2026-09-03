@@ -258,35 +258,35 @@
 
             if (bluetoothCharacteristic) {
                 try {
-                    // Creamos un canvas con el ancho exacto optimizado (384 puntos)
+                    // Lienzo con dimensiones exactas proporcionales a 40x30mm (384 de ancho por 280 de alto)
                     const canvas = document.createElement('canvas');
                     canvas.width = 384; 
-                    canvas.height = 320; 
+                    canvas.height = 280; 
                     const ctx = canvas.getContext('2d');
                     
-                    // Fondo completamente blanco
+                    // Fondo blanco
                     ctx.fillStyle = "#FFFFFF";
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                    // Estilos de texto nítidos
+                    // Textos distribuidos proporcionalmente
                     ctx.fillStyle = "#000000";
-                    ctx.font = "bold 22px Arial";
+                    ctx.font = "bold 20px Arial";
                     ctx.textAlign = "center";
-                    ctx.fillText("SUPER TOÑITA", canvas.width / 2, 40);
+                    ctx.fillText("SUPER TOÑITA", canvas.width / 2, 35);
 
-                    ctx.font = "bold 28px Arial";
-                    ctx.fillText(p.nombre.toUpperCase(), canvas.width / 2, 80);
+                    ctx.font = "bold 24px Arial";
+                    ctx.fillText(p.nombre.toUpperCase(), canvas.width / 2, 75);
 
-                    ctx.font = "bold 22px Arial";
+                    ctx.font = "bold 20px Arial";
                     ctx.textAlign = "left";
-                    ctx.fillText(`PESO: ${peso.toFixed(2)} lb`, 30, 125);
+                    ctx.fillText(`PESO: ${peso.toFixed(2)} lb`, 25, 115);
 
                     const totalBruto = peso * p.precioLibra;
                     const totalAjustado = redondearA5Centavos(totalBruto);
                     ctx.textAlign = "right";
-                    ctx.fillText(`TOTAL: $${totalAjustado.toFixed(2)}`, canvas.width - 30, 125);
+                    ctx.fillText(`TOTAL: $${totalAjustado.toFixed(2)}`, canvas.width - 25, 115);
 
-                    // Insertar el código de barras SVG generado
+                    // Código de barras
                     const svgElement = document.getElementById('barcode');
                     const svgString = new XMLSerializer().serializeToString(svgElement);
                     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
@@ -296,61 +296,61 @@
                     await new Promise((resolve) => {
                         const img = new Image();
                         img.onload = function () {
-                            ctx.drawImage(img, (canvas.width - 300) / 2, 145, 300, 110);
+                            ctx.drawImage(img, (canvas.width - 320) / 2, 135, 320, 110);
                             URL.revokeObjectURL(blobURL);
                             resolve();
                         };
                         img.src = blobURL;
                     });
 
-                    // Traducir los pixeles del canvas a formato de matriz de puntos compatible por líneas
+                    // Extracción de píxeles en formato de bandas verticales (compatible con P2)
                     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                     const width = canvas.width;
                     const height = canvas.height;
-                    const bytesWidth = width / 8; // 48 bytes
                     
-                    let rasterBytes = [];
-                    // Inicializar impresora (ESC @)
-                    rasterBytes.push(0x1B, 0x40); 
-                    // Centrar (ESC a 1)
-                    rasterBytes.push(0x1B, 0x61, 0x01);
+                    let bytes = [];
+                    // Inicializar impresora
+                    bytes.push(0x1B, 0x40);
+                    // Alinear al centro
+                    bytes.push(0x1B, 0x61, 0x01);
 
-                    // Comando raster GS v 0 para imprimir mapa de bits por bloques limpios
-                    rasterBytes.push(0x1D, 0x76, 0x30, 0x00);
-                    rasterBytes.push(bytesWidth & 0xFF, (bytesWidth >> 8) & 0xFF);
-                    rasterBytes.push(height & 0xFF, (height >> 8) & 0xFF);
-
-                    for (let y = 0; y < height; y++) {
-                        for (let xBytes = 0; xBytes < bytesWidth; xBytes++) {
-                            let byte = 0;
-                            for (let bit = 0; bit < 8; bit++) {
-                                const x = xBytes * 8 + bit;
-                                const idx = (y * width + x) * 4;
-                                const r = imgData.data[idx];
-                                const g = imgData.data[idx + 1];
-                                const b = imgData.data[idx + 2];
-                                // Si el pixel es oscuro, encendemos el bit
-                                if ((r + g + b) / 3 < 130) {
-                                    byte |= (1 << (7 - bit));
+                    // Impresión en modo de bandas de 8 puntos verticales (ESC * m nL nH)
+                    const sliceHeight = 8;
+                    for (let y = 0; y < height; y += sliceHeight) {
+                        bytes.push(0x1B, 0x2A, 0x00, width & 0xFF, (width >> 8) & 0xFF);
+                        for (let x = 0; x < width; x++) {
+                            let sliceByte = 0;
+                            for (let bit = 0; bit < sliceHeight; bit++) {
+                                let curY = y + bit;
+                                if (curY < height) {
+                                    let idx = (curY * width + x) * 4;
+                                    let r = imgData.data[idx];
+                                    let g = imgData.data[idx + 1];
+                                    let b = imgData.data[idx + 2];
+                                    if ((r + g + b) / 3 < 130) {
+                                        sliceByte |= (1 << (7 - bit));
+                                    }
                                 }
                             }
-                            rasterBytes.push(byte);
+                            bytes.push(sliceByte);
                         }
+                        // Salto de línea por banda
+                        bytes.push(0x0A);
                     }
 
-                    // Comando para avanzar y expulsar la etiqueta correctamente
-                    rasterBytes.push(0x1B, 0x64, 0x04);
+                    // Avance final para expulsar la etiqueta por completo
+                    bytes.push(0x1B, 0x64, 0x03);
 
-                    // Enviar por bloques estables para que la P2 no sature su buffer Bluetooth
+                    // Envío en paquetes seguros por Bluetooth
                     const CHUNK_SIZE = 512;
-                    const dataArray = new Uint8Array(rasterBytes);
+                    const dataArray = new Uint8Array(bytes);
                     for (let i = 0; i < dataArray.length; i += CHUNK_SIZE) {
                         const chunk = dataArray.slice(i, i + CHUNK_SIZE);
                         await bluetoothCharacteristic.writeValue(chunk);
                     }
 
                 } catch (error) {
-                    console.error("Error al imprimir gráfico en P2:", error);
+                    console.error("Error al imprimir en P2:", error);
                     alert("Error al enviar la etiqueta gráfica. Reconecta el Bluetooth.");
                 }
             } else {
