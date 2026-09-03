@@ -6,6 +6,7 @@
     <title>Super Toñita - Sistema Empaque</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         @media print {
             body * { visibility: hidden; }
@@ -28,36 +29,34 @@
 
     <div class="max-w-md mx-auto space-y-4">
         
-        <!-- Botón de Conexión Bluetooth -->
-        <div class="bg-white p-2 rounded-lg shadow flex justify-between items-center">
-            <span id="bluetoothStatus" class="text-sm font-bold text-red-600">⚠️ Impresora Desconectada</span>
-            <button onclick="conectarBluetooth()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold active:scale-95">Conectar BT</button>
+        <div class="bg-white p-3 rounded-lg shadow flex justify-between items-center">
+            <span class="text-sm font-bold text-green-700 flex items-center gap-1">
+                📱 Modo RawBT Android Activo
+            </span>
+            <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-1 rounded">P25 Bluetooth</span>
         </div>
 
-        <!-- Pestañas -->
         <div class="flex bg-white rounded-lg shadow p-1 no-print">
             <button onclick="showTab('empaque')" id="btnEmpaque" class="flex-1 py-2 font-bold bg-green-600 text-white rounded">Empaque</button>
             <button onclick="showTab('admin')" id="btnAdmin" class="flex-1 py-2 font-bold text-gray-600">Admin</button>
         </div>
 
-        <!-- Seccion Empaque -->
         <div id="empaqueTab" class="space-y-4">
             <select id="productoSelect" class="w-full text-lg p-4 border rounded-xl font-bold bg-white shadow-sm"></select>
             <input type="number" id="pesoInput" step="0.01" inputmode="decimal" class="w-full text-5xl text-center py-6 border-4 border-blue-500 rounded-2xl shadow-inner font-mono" placeholder="0.00 lb">
             <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR</button>
             
-            <div id="etiquetaPreview" class="bg-white p-2 border-2 border-dashed border-gray-300 rounded-xl text-center space-y-1">
-                <p class="text-xs font-bold uppercase">Super Toñita</p>
-                <p id="etiqNombre" class="text-lg font-black uppercase text-gray-800">-- Seleccione --</p>
-                <div id="etiqInfo" class="flex justify-between px-2 text-sm font-bold text-gray-700">
+            <div id="etiquetaPreview" class="bg-white p-3 border-2 border-dashed border-gray-300 rounded-xl text-center space-y-1 mx-auto max-w-[280px]">
+                <p class="text-xs font-bold uppercase tracking-wider text-gray-600">Super Toñita</p>
+                <p id="etiqNombre" class="text-lg font-black uppercase text-gray-800 leading-tight">-- Seleccione --</p>
+                <div id="etiqInfo" class="flex justify-between px-2 text-sm font-bold text-gray-700 my-1">
                     <span id="etiqPeso">0.00 lb</span>
                     <span id="etiqPrecio">$0.00</span>
                 </div>
-                <div class="flex justify-center"><svg id="barcode"></svg></div>
+                <div class="flex justify-center pt-1"><svg id="barcode"></svg></div>
             </div>
         </div>
 
-        <!-- Seccion Admin -->
         <div id="adminTab" class="hidden space-y-4">
             <div class="bg-white p-4 rounded-xl shadow space-y-2">
                 <input type="hidden" id="editId">
@@ -120,35 +119,6 @@
     </script>
 
     <script>
-        let bluetoothDevice = null;
-        let bluetoothCharacteristic = null;
-
-        async function conectarBluetooth() {
-            try {
-                const statusLabel = document.getElementById('bluetoothStatus');
-                statusLabel.innerText = "⏳ Conectando...";
-                statusLabel.className = "text-sm font-bold text-yellow-600";
-
-                bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
-                });
-
-                const server = await bluetoothDevice.gatt.connect();
-                const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-                bluetoothCharacteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-
-                statusLabel.innerText = "✅ Impresora Conectada";
-                statusLabel.className = "text-sm font-bold text-green-600";
-            } catch (error) {
-                console.error(error);
-                const statusLabel = document.getElementById('bluetoothStatus');
-                statusLabel.innerText = "❌ Error de conexión";
-                statusLabel.className = "text-sm font-bold text-red-600";
-                alert('No se pudo conectar: ' + error.message);
-            }
-        }
-
         function showTab(tab) {
             document.getElementById('empaqueTab').classList.toggle('hidden', tab !== 'empaque');
             document.getElementById('adminTab').classList.toggle('hidden', tab !== 'admin');
@@ -209,7 +179,7 @@
         }
 
         function actualizarPreview() {
-            if (!window.productosCache) return;
+            if (!window.productosCache || window.productosCache.length === 0) return;
             
             const selectVal = document.getElementById('productoSelect').value;
             const p = window.productosCache.find(x => x.id === selectVal);
@@ -246,7 +216,7 @@
         document.getElementById('productoSelect').addEventListener('change', actualizarPreview);
 
         async function generarEtiqueta() {
-            const p = window.productosCache.find(x => x.id === document.getElementById('productoSelect').value);
+            const p = window.productosCache ? window.productosCache.find(x => x.id === document.getElementById('productoSelect').value) : null;
             const peso = parseFloat(document.getElementById('pesoInput').value);
             
             if (!p || !peso || peso <= 0) {
@@ -254,40 +224,29 @@
                 return;
             }
 
-            const totalBruto = peso * p.precioLibra;
-            const totalAjustado = redondearA5Centavos(totalBruto);
-            const pesoStr = Math.round(peso * 100).toString().padStart(4, '0');
-            const codigoFinal = `${p.id}${pesoStr}`;
-
             actualizarPreview();
 
-            if (bluetoothCharacteristic) {
-                try {
-                    const encoder = new TextEncoder();
-                    
-                    // Comandos TSPL nativos optimizados para la impresora P2 (40x30mm)
-                    let tsplComandos = 
-                        "SIZE 40 mm, 30 mm\r\n" +
-                        "GAP 2 mm, 0 mm\r\n" +
-                        "DIRECTION 1\r\n" +
-                        "CLS\r\n" +
-                        // Título centrado
-                        "TEXT 70,15,\"2\",0,1,1,\"SUPER TONITA\"\r\n" +
-                        // Nombre del producto
-                        "TEXT 30,45,\"3\",0,1,1,\"" + p.nombre.toUpperCase() + "\"\r\n" +
-                        // Peso y Total
-                        "TEXT 30,85,\"2\",0,1,1,\"PESO: " + peso.toFixed(2) + " lb\"\r\n" +
-                        "TEXT 170,85,\"2\",0,1,1,\"TOTAL: $" + totalAjustado.toFixed(2) + "\"\r\n" +
-                        // Código de barras nativo de hardware
-                        "BARCODE 30,115,\"128\",45,1,0,2,2,\"" + codigoFinal + "\"\r\n" +
-                        "PRINT 1,1\r\n";
+            try {
+                const elementoEtiqueta = document.getElementById("etiquetaPreview");
 
-                    await bluetoothCharacteristic.writeValue(encoder.encode(tsplComandos));
-                } catch (error) {
-                    console.error("Error al enviar por Bluetooth:", error);
-                    alert("Error al enviar a la impresora Bluetooth. Intenta reconectar.");
-                }
-            } else {
+                // Renderiza la vista previa a un Canvas con alta escala (para nitidez del barcode)
+                const canvas = await html2canvas(elementoEtiqueta, {
+                    scale: 3,
+                    backgroundColor: "#ffffff",
+                    logging: false
+                });
+
+                // Convertir a base64
+                const dataUrl = canvas.toDataURL("image/png");
+                const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+
+                // Enviar la imagen directamente al intent de RawBT en Android
+                const rawbtIntent = `intent:${base64Data}#Intent;scheme=rawbt;package=ru.a404m.rawbtprinter;type=image/png;end;`;
+                window.location.href = rawbtIntent;
+
+            } catch (error) {
+                console.error("Error al generar la imagen con html2canvas:", error);
+                // Si falla en un PC o navegador de escritorio, usa la ventana de impresión estándar
                 window.print();
             }
 
