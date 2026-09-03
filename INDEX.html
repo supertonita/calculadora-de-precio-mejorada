@@ -17,6 +17,7 @@
                 border: none !important;
                 background: white;
             }
+            #barcode { width: 35mm !important; height: 10mm !important; }
         }
         @page { size: 40mm 30mm; margin: 0; }
     </style>
@@ -25,12 +26,6 @@
 
     <div class="max-w-md mx-auto space-y-4">
         
-        <!-- Botón de Conexión Bluetooth -->
-        <div class="bg-white p-2 rounded-lg shadow flex justify-between items-center">
-            <span id="bluetoothStatus" class="text-sm font-bold text-red-600">⚠️ Impresora Desconectada</span>
-            <button onclick="conectarBluetooth()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold active:scale-95">Conectar BT</button>
-        </div>
-
         <!-- Pestañas -->
         <div class="flex bg-white rounded-lg shadow p-1 no-print">
             <button onclick="showTab('empaque')" id="btnEmpaque" class="flex-1 py-2 font-bold bg-green-600 text-white rounded">Empaque</button>
@@ -41,16 +36,16 @@
         <div id="empaqueTab" class="space-y-4">
             <select id="productoSelect" class="w-full text-lg p-4 border rounded-xl font-bold bg-white shadow-sm"></select>
             <input type="number" id="pesoInput" step="0.01" inputmode="decimal" class="w-full text-5xl text-center py-6 border-4 border-blue-500 rounded-2xl shadow-inner font-mono" placeholder="0.00 lb">
-            <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR</button>
+            <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR ETIQUETA</button>
             
             <div id="etiquetaPreview" class="bg-white p-2 border-2 border-dashed border-gray-300 rounded-xl text-center space-y-1">
-                <p class="text-xs font-bold uppercase">Super Toñita</p>
-                <p id="etiqNombre" class="text-lg font-black uppercase text-gray-800">-- Seleccione --</p>
-                <div id="etiqInfo" class="flex justify-between px-2 text-sm font-bold text-gray-700">
+                <p class="text-[10px] font-bold uppercase tracking-wider">Super Toñita</p>
+                <p id="etiqNombre" class="text-sm font-black uppercase text-gray-900 leading-tight">-- Seleccione --</p>
+                <div class="flex justify-between px-2 text-xs font-bold text-gray-800">
                     <span id="etiqPeso">0.00 lb</span>
                     <span id="etiqPrecio">$0.00</span>
                 </div>
-                <div class="flex justify-center"><svg id="barcode"></svg></div>
+                <div class="flex justify-center mt-1"><svg id="barcode"></svg></div>
             </div>
         </div>
 
@@ -117,35 +112,6 @@
     </script>
 
     <script>
-        let bluetoothDevice = null;
-        let bluetoothCharacteristic = null;
-
-        async function conectarBluetooth() {
-            try {
-                const statusLabel = document.getElementById('bluetoothStatus');
-                statusLabel.innerText = "⏳ Conectando...";
-                statusLabel.className = "text-sm font-bold text-yellow-600";
-
-                bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
-                });
-
-                const server = await bluetoothDevice.gatt.connect();
-                const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-                bluetoothCharacteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-
-                statusLabel.innerText = "✅ Impresora Conectada";
-                statusLabel.className = "text-sm font-bold text-green-600";
-            } catch (error) {
-                console.error(error);
-                const statusLabel = document.getElementById('bluetoothStatus');
-                statusLabel.innerText = "❌ Error de conexión";
-                statusLabel.className = "text-sm font-bold text-red-600";
-                alert('No se pudo conectar: ' + error.message);
-            }
-        }
-
         function showTab(tab) {
             document.getElementById('empaqueTab').classList.toggle('hidden', tab !== 'empaque');
             document.getElementById('adminTab').classList.toggle('hidden', tab !== 'admin');
@@ -231,10 +197,10 @@
             
             JsBarcode("#barcode", codigoFinal, { 
                 format: "CODE128", 
-                width: 2, 
-                height: 40, 
+                width: 1.8, 
+                height: 35, 
                 displayValue: true,
-                fontSize: 12,
+                fontSize: 10,
                 margin: 0
             });
         }
@@ -242,7 +208,7 @@
         document.getElementById('pesoInput').addEventListener('input', actualizarPreview);
         document.getElementById('productoSelect').addEventListener('change', actualizarPreview);
 
-        async function generarEtiqueta() {
+        function generarEtiqueta() {
             const p = window.productosCache.find(x => x.id === document.getElementById('productoSelect').value);
             const peso = parseFloat(document.getElementById('pesoInput').value);
             
@@ -253,47 +219,8 @@
 
             actualizarPreview();
 
-            if (bluetoothCharacteristic) {
-                try {
-                    const totalBruto = peso * p.precioLibra;
-                    const totalAjustado = redondearA5Centavos(totalBruto);
-                    const pesoStr = Math.round(peso * 100).toString().padStart(4, '0');
-                    const codigoFinal = `${p.id}${pesoStr}`;
-
-                    // Comando TSPL nativo optimizado para impresoras térmicas de etiquetas 40x30mm
-                    let tspl = 
-                        "SIZE 40 mm, 30 mm\n" +
-                        "GAP 2 mm, 0 mm\n" +
-                        "DIRECTION 1\n" +
-                        "CLS\n" +
-                        // Título superior
-                        "TEXT 40, 15, \"2\", 0, 1, 1, \"SUPER TONITA\"\n" +
-                        // Nombre del producto centrado/destacado
-                        `TEXT 20, 45, \"3\", 0, 1, 1, \"${p.nombre.toUpperCase()}\"\n` +
-                        // Peso y Precio
-                        `TEXT 20, 95, \"2\", 0, 1, 1, \"PESO: ${peso.toFixed(2)} LB\"\n` +
-                        `TEXT 220, 95, \"2\", 0, 1, 1, \"TOTAL: \$${totalAjustado.toFixed(2)}\"\n` +
-                        // Código de barras limpio generado por hardware TSPL
-                        `BARCODE 40, 140, \"128\", 50, 1, 0, 2, 2, \"${codigoFinal}\"\n` +
-                        "PRINT 1, 1\n";
-
-                    const encoder = new TextEncoder();
-                    const dataArray = encoder.encode(tspl);
-
-                    // Envío por bloques Bluetooth
-                    const CHUNK_SIZE = 512;
-                    for (let i = 0; i < dataArray.length; i += CHUNK_SIZE) {
-                        const chunk = dataArray.slice(i, i + CHUNK_SIZE);
-                        await bluetoothCharacteristic.writeValue(chunk);
-                    }
-
-                } catch (error) {
-                    console.error("Error al imprimir TSPL:", error);
-                    alert("Error al enviar comando TSPL. Reconecta el Bluetooth.");
-                }
-            } else {
-                window.print();
-            }
+            // Lanzar impresión directa del navegador hacia la impresora térmica de etiquetas
+            window.print();
 
             document.getElementById('pesoInput').value = '';
             actualizarPreview();
