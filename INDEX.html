@@ -30,12 +30,12 @@
 
     <div class="max-w-md mx-auto space-y-4">
         
-        <!-- Indicador de Impresión RawBT -->
+        <!-- Indicador de Impresión -->
         <div class="bg-white p-3 rounded-lg shadow flex justify-between items-center">
             <span class="text-sm font-bold text-green-700 flex items-center gap-1">
-                📱 Modo RawBT Android Activo
+                📱 Impresión RawBT / P25
             </span>
-            <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-1 rounded">Impresora P25</span>
+            <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-1 rounded">Modo Activo</span>
         </div>
 
         <!-- Pestañas -->
@@ -48,8 +48,15 @@
         <div id="empaqueTab" class="space-y-4">
             <select id="productoSelect" class="w-full text-lg p-4 border rounded-xl font-bold bg-white shadow-sm"></select>
             <input type="number" id="pesoInput" step="0.01" inputmode="decimal" class="w-full text-5xl text-center py-6 border-4 border-blue-500 rounded-2xl shadow-inner font-mono" placeholder="0.00 lb">
-            <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR</button>
             
+            <!-- Botón Principal: Envío directo a RawBT -->
+            <button onclick="generarEtiqueta()" class="w-full bg-green-600 text-white py-6 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-all">IMPRIMIR (RAWBT)</button>
+            
+            <!-- Botón Secundario: Cuadro de Impresión de Android -->
+            <button onclick="imprimirSistema()" class="w-full bg-gray-600 text-white py-3 text-sm font-bold rounded-xl shadow active:scale-95 transition-all">
+                🖨️ Opción 2: Usar Impresión del Sistema Android
+            </button>
+
             <!-- Vista previa que se convierte en imagen para la impresora P25 -->
             <div id="etiquetaPreview" class="bg-white p-3 border-2 border-dashed border-gray-300 rounded-xl text-center space-y-1 mx-auto max-w-[280px]">
                 <p class="text-xs font-bold uppercase tracking-wider text-gray-600">Super Toñita</p>
@@ -235,22 +242,21 @@
             try {
                 const elementoEtiqueta = document.getElementById("etiquetaPreview");
 
-                // Renderiza la vista previa a un Canvas con alta resolución (scale: 3)
+                // Renderiza la vista previa a un Canvas
                 const canvas = await html2canvas(elementoEtiqueta, {
                     scale: 3,
                     backgroundColor: "#ffffff",
                     logging: false
                 });
 
-                // Extrae la imagen en Base64 sin el prefijo de cabecera
+                // Extrae la imagen Base64 limpia
                 const dataUrl = canvas.toDataURL("image/png");
                 const cleanBase64 = dataUrl.replace(/^data:image\/png;base64,/, "");
 
-                // Intent oficial de RawBT con el paquete corregido (ru.a402d.rawbtprinter)
-                const rawbtIntent = `intent:${cleanBase64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;type=image/png;end;`;
+                // Intent de Android sin parámetros que provoquen apertura de Play Store
+                const rawbtUri = "intent:base64," + cleanBase64 + "#Intent;scheme=rawbt;end;";
                 
-                // Ejecuta la apertura de RawBT en Android
-                window.location.href = rawbtIntent;
+                window.location.href = rawbtUri;
 
             } catch (error) {
                 console.error("Error al generar la imagen:", error);
@@ -260,6 +266,11 @@
             document.getElementById('pesoInput').value = '';
             actualizarPreview();
             document.getElementById('pesoInput').focus();
+        }
+
+        function imprimirSistema() {
+            actualizarPreview();
+            window.print();
         }
     </script>
 </body>
